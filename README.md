@@ -30,8 +30,11 @@
 
 
 3. Install XanMod Kernel _(Only on Ubuntu & Debian)_:
-    - Enable BBRv3.
+    - Installs the latest XanMod MAIN kernel (BBRv3 built-in and active by default after reboot).
     - CloudFlare TCP Optimizations.
+    - Official packages: Ubuntu 24.04+ _(noble, resolute, ...)_ & Debian 12+ _(bookworm, trixie, sid)_.
+    - Ubuntu 22.04 _(jammy)_: XanMod no longer publishes packages for it — the script offers an optional compatibility install from the Debian `bookworm` suite.
+    - Requires `x86_64` and a real kernel (skipped automatically inside LXC/OpenVZ/Docker containers).
     - More Details: https://xanmod.org
 
 4. Install Useful Packages:
@@ -50,7 +53,7 @@
     - Swap Size: `2Gb`
 
 
-8. Optimize the [SYSCTL](https://github.com/hawshemi/Linux-Optimizer/blob/main/files/sysctl.conf) Configs:
+8. Optimize the [SYSCTL](https://github.com/LivingG0D/linux-optimizer/blob/main/files/sysctl.conf) Configs:
     - Optimize File System Settings.
     - Optimize Network Core Settings.
     - Optimize `SWAP`.
@@ -64,7 +67,7 @@
     *Original file is backed up at `/etc/sysctl.conf.bak`.*
 
     
-9. Optimize [SSH](https://github.com/hawshemi/Linux-Optimizer/blob/main/files/sshd_config):
+9. Optimize [SSH](https://github.com/LivingG0D/linux-optimizer/blob/main/files/sshd_config):
     - Disable DNS lookups for connecting clients.
     - Remove less efficient encryption ciphers.
     - Enable and Configure TCP keep-alive messages.
@@ -75,7 +78,7 @@
     *Original file is backed up at `/etc/ssh/sshd_config.bak`.*
    
 
-10. Optimize the [System Limits](https://github.com/hawshemi/Linux-Optimizer/blob/main/files/profile):
+10. Optimize the [System Limits](https://github.com/LivingG0D/linux-optimizer/blob/main/files/profile):
     - Soft and Hard *ulimit* `-c -d -f -i -l -n -q -s -u -v -x` optimizations.
     
     
@@ -110,7 +113,7 @@ sudo -i
 ```
 #### Then:
 ```
-wget "https://raw.githubusercontent.com/hawshemi/Linux-Optimizer/main/linux-optimizer.sh" -O linux-optimizer.sh && chmod +x linux-optimizer.sh && bash linux-optimizer.sh 
+wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/linux-optimizer.sh" -O linux-optimizer.sh && chmod +x linux-optimizer.sh && bash linux-optimizer.sh 
 ```
 
 

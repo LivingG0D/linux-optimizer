@@ -1,5 +1,5 @@
 #!/bin/bash
-# https://github.com/hawshemi/Linux-Optimizer
+# https://github.com/LivingG0D/linux-optimizer
 
 
 # Green, Yellow & Red Messages.
@@ -98,86 +98,162 @@ complete_update() {
 
 # Install XanMod Kernel
 install_xanmod() {
-    echo 
+    echo
     yellow_msg 'Checking XanMod...'
-    echo 
+    echo
     sleep 0.5
 
     if uname -r | grep -q 'xanmod'; then
         green_msg 'XanMod is already installed.'
-        echo 
+        echo
         sleep 0.5
-    else
-        echo 
-        yellow_msg 'XanMod not found. Installing XanMod Kernel...'
-        echo 
-        sleep 0.5
+        return 0
+    fi
 
-        ## Update, Upgrade & Install dependencies
-        sudo apt update -q
-        sudo apt upgrade -y
-        sudo apt install wget curl gpg -y
+    ## XanMod only publishes x86-64 packages.
+    if [[ "$(uname -m)" != 'x86_64' ]]; then
+        red_msg "Unsupported architecture: $(uname -m). XanMod only supports x86_64. Skipping."
+        echo
+        sleep 2
+        return 1
+    fi
 
-        ## Check the CPU level
-        cpu_level=$(awk -f - <<EOF
-        BEGIN {
-            while (!/flags/) if (getline < "/proc/cpuinfo" != 1) exit 1
-            if (/lm/&&/cmov/&&/cx8/&&/fpu/&&/fxsr/&&/mmx/&&/syscall/&&/sse2/) level = 1
-            if (level == 1 && /cx16/&&/lahf/&&/popcnt/&&/sse4_1/&&/sse4_2/&&/ssse3/) level = 2
-            if (level == 2 && /avx/&&/avx2/&&/bmi1/&&/bmi2/&&/f16c/&&/fma/&&/abm/&&/movbe/&&/xsave/) level = 3
-            if (level == 3 && /avx512f/&&/avx512bw/&&/avx512cd/&&/avx512dq/&&/avx512vl/) level = 4
-            if (level > 0) { print level; exit level + 1 }
-            exit 1
-        }
-EOF
-        )
+    ## The kernel cannot be replaced inside containers (LXC, OpenVZ, Docker, ...).
+    if systemd-detect-virt --container --quiet 2>/dev/null; then
+        red_msg "Container detected ($(systemd-detect-virt --container)). Kernel cannot be changed. Skipping."
+        echo
+        sleep 2
+        return 1
+    fi
 
-        if [ "$cpu_level" -ge 1 ] && [ "$cpu_level" -le 4 ]; then
-            echo 
-            yellow_msg "CPU Level: v$cpu_level"
-            echo 
+    echo
+    yellow_msg 'XanMod not found. Installing XanMod Kernel...'
+    echo
+    sleep 0.5
 
-            ## Add the XanMod repository key
-            # Define a temporary file for the GPG key
-            tmp_keyring="/tmp/xanmod-archive-keyring.gpg"
+    ## Install dependencies
+    sudo apt update -q
+    sudo apt install -y wget curl gpg lsb-release
 
-            # Try downloading the GPG key from the XanMod link first
-            if ! wget -qO $tmp_keyring https://dl.xanmod.org/archive.key || ! [ -s $tmp_keyring ]; then
-                # If the first attempt fails, try the GitLab link
-                if ! wget -qO $tmp_keyring https://gitlab.com/afrd.gpg || ! [ -s $tmp_keyring ]; then
-                    echo "Both attempts to download the GPG key failed or the file was empty. Exiting."
-                    exit 1
-                fi
+    ## XanMod publishes one apt suite per distro codename (e.g. noble, resolute, bookworm).
+    codename="$(lsb_release -sc 2>/dev/null)"
+    if [ -z "$codename" ] && [ -r /etc/os-release ]; then
+        codename="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+    fi
+    repo_suite="$codename"
+
+    ## Make sure the repository actually serves this codename.
+    if ! curl -sfIL "https://deb.xanmod.org/dists/${repo_suite}/Release" >/dev/null 2>&1; then
+        echo
+        red_msg "XanMod repository has no packages for '${codename}'."
+        red_msg 'Officially supported: Ubuntu 24.04+ (noble) and Debian 12+ (bookworm).'
+        yellow_msg "Try a compatibility install from the Debian 'bookworm' suite instead? (y/n)"
+        echo
+        read -r fallback_choice
+        if [[ "$fallback_choice" == 'y' || "$fallback_choice" == 'Y' ]]; then
+            repo_suite='bookworm'
+            if ! curl -sfIL "https://deb.xanmod.org/dists/${repo_suite}/Release" >/dev/null 2>&1; then
+                red_msg "Fallback suite 'bookworm' is unreachable too. Skipping XanMod installation."
+                echo
+                sleep 2
+                return 1
             fi
+        else
+            red_msg 'Skipping XanMod installation.'
+            echo
+            sleep 1
+            return 1
+        fi
+    fi
 
-            # If we reach this point, it means we have a non-empty GPG file
-            # Now dearmor the GPG key and move to the final location
-            sudo gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_keyring
+    ## Check the CPU psABI level. (Same logic as https://dl.xanmod.org/check_x86-64_psabi.sh)
+    cpu_level=$(awk -f - <<EOF
+    BEGIN {
+        while (!/flags/) if (getline < "/proc/cpuinfo" != 1) exit 1
+        if (/lm/&&/cmov/&&/cx8/&&/fpu/&&/fxsr/&&/mmx/&&/syscall/&&/sse2/) level = 1
+        if (level == 1 && /cx16/&&/lahf/&&/popcnt/&&/sse4_1/&&/sse4_2/&&/ssse3/) level = 2
+        if (level == 2 && /avx/&&/avx2/&&/bmi1/&&/bmi2/&&/f16c/&&/fma/&&/abm/&&/movbe/&&/xsave/) level = 3
+        if (level == 3 && /avx512f/&&/avx512bw/&&/avx512cd/&&/avx512dq/&&/avx512vl/) level = 4
+        if (level > 0) { print level; exit level + 1 }
+        exit 1
+    }
+EOF
+    )
+    cpu_level="${cpu_level:-0}"
 
-            # Clean up the temporary file
-            rm -f $tmp_keyring
+    ## XanMod discontinued the x64v4 builds - x64v3 is the highest published package.
+    if [ "$cpu_level" -ge 4 ]; then
+        cpu_level=3
+    fi
 
-            ## Add the XanMod repository
-            echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' | sudo tee /etc/apt/sources.list.d/xanmod-release.list
-            
-            ## Install XanMod
-            sudo apt update -q && sudo apt install "linux-xanmod-x64v$cpu_level" -y
+    if [ "$cpu_level" -ge 1 ] && [ "$cpu_level" -le 3 ]; then
+        echo
+        yellow_msg "CPU Level: v$cpu_level"
+        echo
 
-            ## Clean up
-            sudo apt update -q
+        ## MAIN ships x64v2/v3 only; x64v1 CPUs get the LTS build instead.
+        if [ "$cpu_level" -ge 2 ]; then
+            xanmod_pkg="linux-xanmod-x64v$cpu_level"
+        else
+            xanmod_pkg="linux-xanmod-lts-x64v1"
+        fi
+
+        ## Install the repository key into the modern keyring location.
+        sudo install -d -m 0755 /etc/apt/keyrings
+        tmp_keyring="/tmp/xanmod-archive.key"
+
+        # Try the official XanMod key first, then the GitLab mirror.
+        if ! wget -qO "$tmp_keyring" https://dl.xanmod.org/archive.key || ! [ -s "$tmp_keyring" ]; then
+            if ! wget -qO "$tmp_keyring" https://gitlab.com/afrd.gpg || ! [ -s "$tmp_keyring" ]; then
+                red_msg 'Both attempts to download the GPG key failed or the file was empty. Skipping XanMod installation.'
+                rm -f "$tmp_keyring"
+                echo
+                sleep 2
+                return 1
+            fi
+        fi
+
+        sudo gpg --dearmor --yes -o /etc/apt/keyrings/xanmod-archive-keyring.gpg "$tmp_keyring"
+        rm -f "$tmp_keyring"
+
+        ## Add the XanMod repository (per-codename suite).
+        echo "deb [signed-by=/etc/apt/keyrings/xanmod-archive-keyring.gpg] https://deb.xanmod.org ${repo_suite} main" | sudo tee /etc/apt/sources.list.d/xanmod-release.list
+
+        ## Install the latest XanMod MAIN kernel for this CPU level.
+        sudo apt update -q
+        if sudo apt install -y "$xanmod_pkg"; then
             sudo apt autoremove --purge -y
-            
-            echo 
-            green_msg "XanMod Kernel Installed. Reboot to Apply the new Kernel."
-            echo 
+            echo
+            green_msg "XanMod kernel ($xanmod_pkg) installed."
+            green_msg 'BBRv3 is built-in and becomes the active congestion control after reboot.'
+            echo
             sleep 1
         else
-            echo 
-            red_msg "Unsupported CPU. (Check the supported CPUs at xanmod.org)"
-            echo 
+            red_msg 'XanMod kernel installation FAILED. Check the apt output above.'
+            ## Leave apt in a clean state.
+            sudo rm -f /etc/apt/sources.list.d/xanmod-release.list
+            sudo apt update -q
+            echo
             sleep 2
+            return 1
         fi
-        
+    else
+        echo
+        red_msg 'Unsupported CPU. (Check the supported CPUs at xanmod.org)'
+        echo
+        sleep 2
+        return 1
+    fi
+}
+
+
+# Install a list of packages; retry individually so one missing package cannot abort the rest.
+install_pkgs() {
+    if ! sudo apt -q -y install "$@"; then
+        local pkg
+        for pkg in "$@"; do
+            sudo apt -q -y install "$pkg" || red_msg "Package not available, skipped: $pkg"
+        done
     fi
 }
 
@@ -190,19 +266,19 @@ installations() {
     sleep 0.5
 
     ## Networking packages
-    sudo apt -q -y install apt-transport-https
+    install_pkgs apt-transport-https
 
     ## System utilities
-    sudo apt -q -y install apt-utils bash-completion busybox ca-certificates cron curl gnupg2 locales lsb-release nano preload screen software-properties-common ufw unzip vim wget xxd zip
+    install_pkgs apt-utils bash-completion busybox ca-certificates cron curl gnupg2 locales lsb-release nano preload screen software-properties-common ufw unzip vim wget xxd zip
 
     ## Programming and development tools
-    sudo apt -q -y install autoconf automake bash-completion build-essential git libtool make pkg-config python3 python3-pip
+    install_pkgs autoconf automake bash-completion build-essential git libtool make pkg-config python3 python3-pip
 
     ## Additional libraries and dependencies
-    sudo apt -q -y install bc binutils binutils-common binutils-x86-64-linux-gnu debian-keyring haveged jq libsodium-dev libsqlite3-dev libssl-dev packagekit qrencode socat
+    install_pkgs bc binutils binutils-common binutils-x86-64-linux-gnu debian-keyring haveged jq libsodium-dev libsqlite3-dev libssl-dev packagekit qrencode socat
 
     ## Miscellaneous
-    sudo apt -q -y install dialog htop net-tools
+    install_pkgs dialog htop net-tools
 
     echo 
     green_msg 'Useful Packages Installed Succesfully.'
@@ -213,7 +289,14 @@ installations() {
 
 # Enable packages at server boot
 enable_packages() {
-    sudo systemctl enable cron haveged preload
+    local svc
+    for svc in cron haveged preload; do
+        if systemctl list-unit-files "${svc}.service" --no-legend 2>/dev/null | grep -q "$svc"; then
+            sudo systemctl enable "$svc"
+        else
+            yellow_msg "Service not installed, skipped: $svc"
+        fi
+    done
     echo 
     green_msg 'Packages Enabled Successfully.'
     echo
@@ -228,12 +311,20 @@ swap_maker() {
     echo 
     sleep 0.5
 
+    ## Skip if swap is already active or the swap file already exists (idempotent re-runs).
+    if [ -e "$SWAP_PATH" ] || [ -n "$(swapon --show --noheadings 2>/dev/null)" ]; then
+        green_msg 'Swap already exists. Skipping swap creation.'
+        echo
+        sleep 0.5
+        return 0
+    fi
+
     ## Make Swap
     sudo fallocate -l $SWAP_SIZE $SWAP_PATH  ### Allocate size
     sudo chmod 600 $SWAP_PATH                ### Set proper permission
-    sudo mkswap $SWAP_PATH                   ### Setup swap         
+    sudo mkswap $SWAP_PATH                   ### Setup swap
     sudo swapon $SWAP_PATH                   ### Enable swap
-    echo "$SWAP_PATH   none    swap    sw    0   0" >> /etc/fstab ### Add to fstab
+    grep -q "^$SWAP_PATH " /etc/fstab || echo "$SWAP_PATH   none    swap    sw    0   0" >> /etc/fstab ### Add to fstab (no duplicates)
     echo 
     green_msg 'SWAP Created Successfully.'
     echo
@@ -316,7 +407,7 @@ sysctl_optimizations() {
         "$SYS_PATH"
 
 
-    ## Add new parameteres. Read More: https://github.com/hawshemi/Linux-Optimizer/blob/main/files/sysctl.conf
+    ## Add new parameteres. Read More: https://github.com/LivingG0D/linux-optimizer/blob/main/files/sysctl.conf
 
 cat <<EOF >> "$SYS_PATH"
 
@@ -327,7 +418,7 @@ cat <<EOF >> "$SYS_PATH"
 
 # /etc/sysctl.conf
 # These parameters in this file will be added/updated to the sysctl.conf file.
-# Read More: https://github.com/hawshemi/Linux-Optimizer/blob/main/files/sysctl.conf
+# Read More: https://github.com/LivingG0D/linux-optimizer/blob/main/files/sysctl.conf
 
 
 ## File system settings
@@ -508,6 +599,14 @@ vm.overcommit_ratio = 100
 EOF
 
     sudo sysctl -p
+
+    ## Report the active TCP congestion control.
+    active_cc="$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)"
+    if uname -r | grep -q 'xanmod'; then
+        green_msg "Active congestion control: ${active_cc} (BBRv3 - XanMod kernel)"
+    else
+        green_msg "Active congestion control: ${active_cc} (stock kernel = BBRv1. Install XanMod + reboot for BBRv3.)"
+    fi
     
     echo 
     green_msg 'Network is Optimized.'
@@ -599,8 +698,13 @@ update_sshd_conf() {
     ## Enable X11 graphical interface forwarding
     echo "X11Forwarding yes" | tee -a "$SSH_PATH"
 
-    ## Restart the SSH service to apply the changes
-    sudo systemctl restart ssh
+    ## Validate the config before restarting to avoid locking ourselves out.
+    if sudo sshd -t; then
+        sudo systemctl restart ssh
+    else
+        red_msg 'sshd config test FAILED - SSH was NOT restarted. Restore from /etc/ssh/sshd_config.bak'
+        return 1
+    fi
 
     echo 
     green_msg 'SSH is Optimized.'
