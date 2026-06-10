@@ -116,6 +116,12 @@ sudo -i
 wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/linux-optimizer.sh" -O linux-optimizer.sh && chmod +x linux-optimizer.sh && bash linux-optimizer.sh 
 ```
 
+#### On networks where `raw.githubusercontent.com` is filtered (e.g. Iran), use the jsDelivr mirror instead:
+```
+wget "https://cdn.jsdelivr.net/gh/LivingG0D/linux-optimizer@main/linux-optimizer.sh" -O linux-optimizer.sh && chmod +x linux-optimizer.sh && bash linux-optimizer.sh 
+```
+_(The distro scripts auto-fall back to the jsDelivr mirror, so only this first download needs the mirror URL.)_
+
 
 ## Menu Image
 ### Debian & Ubuntu:

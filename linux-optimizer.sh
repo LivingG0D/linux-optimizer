@@ -29,6 +29,37 @@ HOST_PATH="/etc/hosts"
 DNS_PATH="/etc/resolv.conf"
 
 
+# Repo source. Distro scripts are fetched from here.
+REPO="LivingG0D/linux-optimizer"
+BRANCH="main"
+
+
+# Download a repo file with a hard timeout, trying GitHub raw first and the
+# jsDelivr CDN mirror as a fallback (raw.githubusercontent.com is filtered on
+# some networks, e.g. Iran, where it would otherwise hang forever).
+# Usage: fetch_repo_file <path-in-repo> <output-file>
+fetch_repo_file() {
+    local path="$1"
+    local out="$2"
+    local url
+    local urls=(
+        "https://raw.githubusercontent.com/${REPO}/${BRANCH}/${path}"
+        "https://cdn.jsdelivr.net/gh/${REPO}@${BRANCH}/${path}"
+    )
+
+    for url in "${urls[@]}"; do
+        if wget --timeout=15 --tries=2 -q -O "$out" "$url" && [ -s "$out" ]; then
+            green_msg "Downloaded ${out}."
+            return 0
+        fi
+        yellow_msg "Source unreachable, trying next mirror..."
+    done
+
+    red_msg "Failed to download ${path} from all sources. Check network/DNS and retry."
+    return 1
+}
+
+
 # Intro
 echo 
 green_msg '================================================================='
@@ -260,23 +291,23 @@ sleep 0.5
 case $OS in
 ubuntu)
     # Ubuntu
-    wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/scripts/ubuntu-optimizer.sh" -q -O ubuntu-optimizer.sh && chmod +x ubuntu-optimizer.sh && bash ubuntu-optimizer.sh 
+    fetch_repo_file "scripts/ubuntu-optimizer.sh" "ubuntu-optimizer.sh" && chmod +x ubuntu-optimizer.sh && bash ubuntu-optimizer.sh
     ;;
 debian)
     # Debian
-    wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/scripts/debian-optimizer.sh" -q -O debian-optimizer.sh && chmod +x debian-optimizer.sh && bash debian-optimizer.sh 
+    fetch_repo_file "scripts/debian-optimizer.sh" "debian-optimizer.sh" && chmod +x debian-optimizer.sh && bash debian-optimizer.sh
     ;;
 centos)
     # CentOS
-    wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/scripts/centos-optimizer.sh" -q -O centos-optimizer.sh && chmod +x centos-optimizer.sh && bash centos-optimizer.sh 
+    fetch_repo_file "scripts/centos-optimizer.sh" "centos-optimizer.sh" && chmod +x centos-optimizer.sh && bash centos-optimizer.sh
     ;;
 almalinux)
-    # AlmaLinux
-    wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/scripts/centos-optimizer.sh" -q -O almalinux-optimizer.sh && chmod +x almalinux-optimizer.sh && bash almalinux-optimizer.sh 
+    # AlmaLinux (uses the CentOS script)
+    fetch_repo_file "scripts/centos-optimizer.sh" "almalinux-optimizer.sh" && chmod +x almalinux-optimizer.sh && bash almalinux-optimizer.sh
     ;;
 fedora)
     # Fedora
-    wget "https://raw.githubusercontent.com/LivingG0D/linux-optimizer/main/scripts/fedora-optimizer.sh" -q -O fedora-optimizer.sh && chmod +x fedora-optimizer.sh && bash fedora-optimizer.sh 
+    fetch_repo_file "scripts/fedora-optimizer.sh" "fedora-optimizer.sh" && chmod +x fedora-optimizer.sh && bash fedora-optimizer.sh
     ;;
 unknown)
     # Unknown
