@@ -247,6 +247,98 @@ EOF
 }
 
 
+# Uninstall XanMod & restore the stock kernel (safe, gated)
+uninstall_xanmod() {
+    echo
+    yellow_msg 'Checking for XanMod...'
+    echo
+    sleep 0.5
+
+    local has_pkgs=0
+    if dpkg -l 2>/dev/null | grep -Eq 'linux-(image|headers)-[^ ]*xanmod|linux-xanmod'; then
+        has_pkgs=1
+    fi
+
+    ## Nothing installed and not running it -> nothing to do.
+    if [ "$has_pkgs" -eq 0 ] && ! uname -r | grep -q xanmod; then
+        green_msg 'XanMod is not installed. Nothing to revert.'
+        echo
+        sleep 0.5
+        return 0
+    fi
+
+    ## Packages already gone, system just still booted into XanMod -> only a reboot is needed.
+    if [ "$has_pkgs" -eq 0 ] && uname -r | grep -q xanmod; then
+        yellow_msg 'XanMod packages are already removed. The system only needs a reboot into the stock kernel.'
+        echo
+        ask_reboot
+        return 0
+    fi
+
+    yellow_msg 'This will remove the XanMod kernel and restore the stock kernel as default.'
+    yellow_msg 'Continue? (y/n)'
+    echo
+    read -r confirm
+    if [[ "$confirm" != 'y' && "$confirm" != 'Y' ]]; then
+        red_msg 'Revert cancelled. Nothing was changed.'
+        echo
+        sleep 0.5
+        return 0
+    fi
+
+    ## 1. Make sure a stock kernel is installed.
+    echo
+    yellow_msg 'Installing the stock kernel (if missing)...'
+    echo
+    sudo apt update -q
+    sudo apt install -y linux-image-amd64 linux-headers-amd64
+
+    ## 2. SAFETY GATE: a non-XanMod kernel must exist in /boot before anything is removed.
+    if ! ls /boot/vmlinuz-* 2>/dev/null | grep -vq xanmod; then
+        red_msg 'No stock kernel found in /boot - ABORTING. XanMod was NOT removed (the system would become unbootable).'
+        echo
+        sleep 2
+        return 1
+    fi
+
+    ## 3. Purge XanMod packages. Safe while running it: the active kernel stays in RAM until reboot.
+    echo
+    yellow_msg 'Removing XanMod packages...'
+    echo
+    sudo DEBIAN_FRONTEND=noninteractive apt purge -y 'linux-xanmod*' 'linux-image-*xanmod*' 'linux-headers-*xanmod*'
+
+    ## 4. Remove the XanMod repository and keys.
+    sudo rm -f /etc/apt/sources.list.d/xanmod-release.list \
+               /etc/apt/keyrings/xanmod-archive-keyring.gpg \
+               /usr/share/keyrings/xanmod-archive-keyring.gpg
+    sudo apt update -q
+    sudo apt autoremove --purge -y
+
+    ## 5. Rebuild GRUB - with the XanMod images gone, the stock kernel becomes the default.
+    sudo update-grub
+
+    ## 6. VERIFY before offering a reboot.
+    echo
+    if dpkg -l 2>/dev/null | grep -Eq 'linux-(image|headers)-[^ ]*xanmod|linux-xanmod'; then
+        red_msg 'Some XanMod packages are still installed - check the apt output above. NOT rebooting.'
+        echo
+        sleep 2
+        return 1
+    fi
+    if ls /boot/vmlinuz-* 2>/dev/null | grep -vq xanmod && ! grep -q xanmod /boot/grub/grub.cfg 2>/dev/null; then
+        green_msg 'XanMod removed. GRUB now boots the stock kernel.'
+        green_msg 'Note: BBR stays enabled in sysctl (stock kernel provides BBRv1).'
+        echo
+        ask_reboot
+    else
+        yellow_msg 'XanMod packages removed, but GRUB still references xanmod. Run "sudo update-grub" and check /boot before rebooting.'
+        echo
+        sleep 2
+        return 1
+    fi
+}
+
+
 # Install a list of packages; retry individually so one missing package cannot abort the rest.
 install_pkgs() {
     if ! sudo apt -q -y install "$@"; then
@@ -848,6 +940,8 @@ show_menu() {
     echo 
     green_msg '13 - Install & Optimize UFW.'
     echo 
+    green_msg '14 - Uninstall XanMod & Restore the Stock Kernel.'
+    echo
     red_msg 'q - Exit.'
     echo 
 }
@@ -1076,6 +1170,9 @@ main() {
             green_msg  'Done.'
             green_msg '========================='
 
+            ;;
+        14)
+            uninstall_xanmod
             ;;
         q)
             exit 0

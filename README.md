@@ -35,6 +35,7 @@
     - Official packages: Ubuntu 24.04+ _(noble, resolute, ...)_ & Debian 12+ _(bookworm, trixie, sid)_.
     - Ubuntu 22.04 _(jammy)_: XanMod no longer publishes packages for it — the script offers an optional compatibility install from the Debian `bookworm` suite.
     - Requires `x86_64` and a real kernel (skipped automatically inside LXC/OpenVZ/Docker containers).
+    - Menu option `14` safely uninstalls XanMod and restores the stock kernel (refuses to remove anything unless a stock kernel is present in `/boot`).
     - More Details: https://xanmod.org
 
 4. Install Useful Packages:
